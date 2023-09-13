@@ -23,6 +23,8 @@ class BluetoothCommunication:
         self._master = master
         self._slave_addr = slave_addr
 
+        self._configure_chip()
+
         self.counter = 0
         self.curr_float = []
         self.ready = False
