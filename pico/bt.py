@@ -25,18 +25,19 @@ class BluetoothCommunication:
 
         self._configure_chip()
 
-        self.counter = 0
-        self.curr_float = []
-        self.ready = False
+        self._counter = 0
+        self._curr_float = []
+        self._ready = False
+        self._started = False
 
-        self.curr_x = 0
-        self.curr_y = 0
-        self.pred_x = 0
-        self.pred_y = 0
-        self.goal_x = 0
-        self.goal_y = 0
+        self._curr_x = 0
+        self._curr_y = 0
+        self._pred_x = 0
+        self._pred_y = 0
+        self._goal_x = 0
+        self._goal_y = 0
 
-        self.reading = {
+        self._reading = {
             "curr_x": 0,
             "curr_y": 0,
             "pred_x": 0,
@@ -83,50 +84,57 @@ class BluetoothCommunication:
             addr = self._uart.read()
             print("Bluetooth address:")
             print(addr)
+        
+        self._key.low()
 
-    def tick(self):
+    def tick_read(self):
         read = self._uart.read(1)
 
         if read == b'11111111':
-            self.counter = 0
-            self.curr_float = []
+            self._counter = 0
+            self._curr_float = []
+            self._started = True
         
-        self.curr_float.append(read)
+        if self._started:
+            self._curr_float.append(read)
+        else:
+            return
 
-        if len(self.curr_float) == 4:
+        if len(self._curr_float) == 4:
             # ready to parse a float
-            curr_float = _parse_float(self.curr_float)
-            if self.counter == 0:
-                self.curr_x = curr_float
-            elif self.counter == 1:
-                self.curr_y = curr_float
-            elif self.counter == 2:
-                self.pred_x = curr_float
-            elif self.counter == 3:
-                self.pred_y = curr_float
-            elif self.counter == 4:
-                self.goal_x = curr_float
-            elif self.counter == 5:
-                self.goal_y = curr_float
-                self.ready = True
+            curr_float = _parse_float(self._curr_float)
+            if self._counter == 0:
+                self._curr_x = curr_float
+            elif self._counter == 1:
+                self._curr_y = curr_float
+            elif self._counter == 2:
+                self._pred_x = curr_float
+            elif self._counter == 3:
+                self._pred_y = curr_float
+            elif self._counter == 4:
+                self._goal_x = curr_float
+            elif self._counter == 5:
+                self._goal_y = curr_float
+                self._ready = True
+                self._started = False
                 self._update_reading()
             
-            self.counter += 1
-            self.curr_float = []
+            self._counter += 1
+            self._curr_float = []
 
     def _update_reading(self):
-        self.reading = {
-            "curr_x": self.curr_x,
-            "curr_y": self.curr_y,
-            "pred_x": self.pred_x,
-            "pred_y": self.pred_y,
-            "goal_x": self.goal_x,
-            "goal_y": self.goal_x,
+        self._reading = {
+            "curr_x": self._curr_x,
+            "curr_y": self._curr_y,
+            "pred_x": self._pred_x,
+            "pred_y": self._pred_y,
+            "goal_x": self._goal_x,
+            "goal_y": self._goal_x,
         }
     
     def get_reading(self):
-        if self.ready:
-            return self.reading
+        if self._ready:
+            return self._reading
     
     def transmit_state(self, reading):
         # header
@@ -139,3 +147,6 @@ class BluetoothCommunication:
         self._uart.write(reading['pred_y'])
         self._uart.write(reading['goal_x'])
         self._uart.write(reading['goal_y'])
+    
+    def is_ready(self):
+        return self._ready

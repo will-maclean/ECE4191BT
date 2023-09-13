@@ -12,8 +12,8 @@ if __name__ == "__main__":
 
     done = False
     while done:
-        bt_module.tick()
+        bt_module.tick_read()
 
-        if bt_module.ready:
+        if bt_module.is_ready():
             print(bt_module.get_reading())
             done = True
