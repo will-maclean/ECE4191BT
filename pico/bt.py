@@ -1,6 +1,5 @@
-import struct
-
 from machine import UART, Pin
+import time
 
 def _parse_float(uart_reads):
     return float(b"".join(uart_reads))
@@ -16,14 +15,11 @@ class BluetoothCommunication:
     # 4 -> goal x
     # 5 -> goal y
 
-    def __init__(self, uart, tx, rx, key, baudrate=9600, master=True, slave_addr=None) -> None:
+    def __init__(self, uart, tx, rx, baudrate=38400, master=True, passwd='1234') -> None:
         self._uart = UART(uart, baudrate=baudrate, tx=Pin(tx), rx=Pin(rx))
-        self._key = Pin(key, mode=Pin.OUT)
 
         self._master = master
-        self._slave_addr = slave_addr
-
-        self._configure_chip()
+        self._passwd = passwd
 
         self._counter = 0
         self._curr_float = []
@@ -46,46 +42,99 @@ class BluetoothCommunication:
             "goal_y": 0,
         }
     
-    def _configure_chip(self):
-        # enter configuration mode
-        self._key.high()
+    def configure_chip(self):
+        print("Ensure EN pin is set high (3V3). Should be 1s on, 1s off flash")
 
-        # clear any paired devices
-        self._uart.write('AT+RMAAD')
+        # just say hi
+        print("Saying hello...")
+        print(self._wr("AT\r\n"))
 
-        # configure baudrate
-        self._uart.write('AT+UART=38400,0,0')
+        # set the password
+        self._wr(f"AT+PSWD={self._passwd}\r\n")
 
-        # connect if master
         if self._master:
+            # master
+            
+            # clear any paired devices
+            print("clearing paired devices")
+            self._wr(f"AT+RMAAD\r\n")
+
             # set as master
-            self._uart.write('AT+ROLE=1')
+            print("setting as master")
+            self._wr(f"AT+ROLE=1\r\n")
 
-            # connect
+            # reset
+            print("resetting")
+            self._wr(f"AT+RESET\r\n")
 
-            # set connection mode
-            self._uart.write('AT+CMODE=0')
+            # set to manual pairing
+            print("setting manual pairing")
+            self._wr(f"AT+CMODE=0\r\n")
 
-            # set connection address
-            connection_cmd = 'AT+BIND=' + str(self._slave_addr)
-            self._uart.write(connection_cmd)
+            # setup inquiry mode
+            print("configuring inquiry mode")
+            self._wr(f"AT+INQM=0,5,9\r\n")
 
-            # configure baudrate
-            pass
+            # setup SSP mode
+            print("configuring SSP")
+            print(self._wr(f"AT+INIT\r\n"))
+
+            # inquire for BT devices
+            print("searching for devices")
+            print(self._wr(f"AT+INQ\r\n", sleep=10))
+
+            # query for host names and check which address we want
+            resp = None
+            addr = None
+            while resp != 'done':
+                print("Note -> replace colons with commas")
+                resp = input("enter an address to query hostname, or 'done' if last address was correct, or 'rescan': ")
+
+                if resp == 'done':
+                    break
+                elif resp == 'rescan':
+                    print("searching for devices")
+                    print(self._wr(f"AT+INQ\r\n", sleep=10))
+                else:
+                    print(self._wr(f"AT+RNAME?{resp}\r\n"))
+                    addr = resp
+            
+            # pair with the device
+            print("pairing...")
+            print(self._wr(f"AT+PAIR={addr},9\r\n", sleep=10))
+
+            # bind
+            print("binding...")
+            print(self._wr(f"AT+BIND={addr}\r\n", sleep=10))
+
+            # set master to only connect with paired devices
+            print(self._wr(f"AT+CMODE=1\r\n"))
+
+            # link
+            print("linking...")
+            print(self._wr(f"AT+LINK={addr}\r\n", sleep=10))
+
+            print("If you got here - awesome. Remove EN from both chips and you should be in business")
+
         else:
+            # slave
+
+            # clear any paired devices
+            self._wr(f"AT+RMAAD\r\n")
+
             # set as slave
-            self._uart.write('AT+ROLE=0')
+            self._wr(f"AT+ROLE=0\r\n")
 
-            # clear the buffer
-            self._uart.read()
+            # reset
+            self._wr(f"AT+RESET\r\n")
 
-            # get the address and print it out
-            self._uart.write('AT+ADDR')
-            addr = self._uart.read()
-            print("Bluetooth address:")
-            print(addr)
-        
-        self._key.low()
+            # set to auto pairing
+            self._wr(f"AT+CMODE=1\r\n")
+    
+    def _wr(self, message, sleep=1):
+        self._uart.write(message)
+        time.sleep(sleep)
+        return self._uart.read()
 
     def tick_read(self):
         read = self._uart.read(1)
@@ -150,3 +199,6 @@ class BluetoothCommunication:
     
     def is_ready(self):
         return self._ready
+    
+    def factory_reset(self):
+        return self._wr("AT+RESET\r\n")
